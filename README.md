@@ -317,7 +317,7 @@ Sample curl:
 
 ---
 
-## FAQs (Interview revision style)
+## FAQs
 
 Q: How do you handle ties in ranking?
 A: We use dense ranking in the example — tied scores receive the same rank and the next distinct score gets the next rank number. You can switch to SQL RANK() if you want gaps.
