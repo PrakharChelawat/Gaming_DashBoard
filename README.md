@@ -352,5 +352,12 @@ A: user_id speeds joins and per-user aggregations; timestamp speeds queries limi
 - Add tests, Docker Compose (Postgres + app), and CI pipeline (Newman runner for Postman collection).
 - Add metrics (Prometheus) and health endpoints for production readiness.
 
+## UI Stats Dashboard
+This UI displays the Top 10 live leaderboard, allows user rank lookup, and lets you add +2 points to any user using the APIs: GET /api/leaderboard/top, GET /api/leaderboard/rank/{userId}, and POST /api/leaderboard/submit.
+The page auto-refreshes every 3 seconds, showing rank, username, and total score, with search functionality for any specific user.
+Open the UI by navigating to http://localhost:8080/
+(or your current server URL) in the browser.
+
 ---
 ```
+

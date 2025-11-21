@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Leaderboard — Top 10 (Live) & User Lookup</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#06b6d4;--muted:#9aa6b2;--white:#eef2f7}
+    body{font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;background:linear-gradient(180deg,#051025 0%,#071229 100%);color:var(--white);margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+    .container{width:820px;padding:20px;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.05));border:1px solid rgba(255,255,255,0.03);border-radius:12px;box-shadow:0 6px 30px rgba(2,6,23,0.6)}
+    h1{margin:0 0 12px 0;font-size:20px}
+    .meta{display:flex;gap:12px;align-items:center;margin-bottom:12px;color:var(--muted);font-size:13px}
+    .controls{display:flex;gap:8px;align-items:center}
+    .btn{background:var(--accent);color:#042028;padding:6px 10px;border-radius:8px;border:none;cursor:pointer;font-weight:600}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+    input[type="text"], input[type="number"]{padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:var(--white)}
+    .card-row{display:flex;gap:12px;margin:10px 0 14px 0;align-items:center}
+    table{width:100%;border-collapse:collapse;background:transparent}
+    th,td{padding:10px 8px;text-align:left;font-size:14px}
+    thead th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+    tbody tr{background:linear-gradient(90deg, rgba(255,255,255,0.01), transparent);border-radius:6px}
+    .rank{width:64px;font-weight:700;color:var(--accent)}
+    .username{font-weight:600}
+    .score{font-feature-settings:"tnum";-moz-font-feature-settings:"tnum";font-variant-numeric:tabular-nums}
+    .muted{color:var(--muted);font-size:13px}
+    .error{color:#ff8b8b;background:rgba(255,139,139,0.06);padding:8px;border-radius:8px;margin-top:10px;display:none}
+    .ok{color:#b7f7e2;background:rgba(39,198,161,0.06);padding:8px;border-radius:8px;margin-top:10px;display:none}
+    .pulse{animation:pulse 1s ease-in-out}
+    @keyframes pulse{0%{opacity:0.2}50%{opacity:1}100%{opacity:0.2}}
+    .small{font-size:12px;color:var(--muted)}
+    .flex{display:flex;gap:10px;align-items:center}
+  </style>
+</head>
+<body>
+  <div class="container" role="main">
+    <h1>Top 10 Leaderboard (Live) & User Lookup</h1>
+
+    <div class="meta">
+      <div class="small">Auto-refresh every <span id="intervalLabel">3</span>s</div>
+      <div style="flex:1"></div>
+      <div class="small muted">Last update: <span id="lastUpdated">—</span></div>
+    </div>
+
+    <div class="card-row">
+      <div class="controls" style="flex:1">
+        <button id="refreshBtn" class="btn">Refresh Top</button>
+      </div>
+
+      <!-- User lookup and actions -->
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="userIdInput" type="text" placeholder="User ID" style="width:110px" />
+        <button id="lookupBtn" class="btn">Lookup Rank</button>
+        <button id="add2Btn" class="btn" title="Add +2 points to user">+2 Points</button>
+      </div>
+    </div>
+
+    <div id="userResult" class="ok" role="status" style="display:none"></div>
+    <div id="error" class="error" role="alert">Could not fetch leaderboard</div>
+
+    <table aria-label="Leaderboard table" id="lbTable">
+      <thead>
+        <tr>
+          <th class="rank">Rank</th>
+          <th>Player</th>
+          <th class="score">Total Score</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="3" class="muted">Loading...</td></tr>
+      </tbody>
+    </table>
+
+    <div style="height:8px"></div>
+    <div class="small muted">Notes: GET /api/leaderboard/top, GET /api/leaderboard/rank/{userId}, POST /api/leaderboard/submit (to add points).</div>
+  </div>
+
+  <script>
+    (function () {
+      const POLL_INTERVAL_MS = 3000;
+      // prefer same origin that served page; fallback to explicit localhost for quick testing
+      const topEndpoint = '/api/leaderboard/top';
+      const rankEndpoint = (id) => `/api/leaderboard/rank/${id}`;
+      const submitEndpoint = '/api/leaderboard/submit';
+
+
+      const tbody = document.getElementById('tbody');
+      const lastUpdated = document.getElementById('lastUpdated');
+      const refreshBtn = document.getElementById('refreshBtn');
+      const lookupBtn = document.getElementById('lookupBtn');
+      const add2Btn = document.getElementById('add2Btn');
+      const userIdInput = document.getElementById('userIdInput');
+      const errorEl = document.getElementById('error');
+      const userResult = document.getElementById('userResult');
+      const intervalLabel = document.getElementById('intervalLabel');
+      intervalLabel.textContent = (POLL_INTERVAL_MS/1000).toString();
+
+      let lastDataJson = null;
+      let timer = null;
+
+      function renderEmpty(msg) {
+        tbody.innerHTML = '<tr><td colspan="3" class="muted">' + (msg || 'No data') + '</td></tr>';
+      }
+
+      function render(data) {
+        if (!Array.isArray(data) || data.length === 0) {
+          renderEmpty('No leaderboard entries yet');
+          return;
+        }
+        const rows = data.slice(0, 10).map(entry => {
+          const rank = entry.rank ?? '';
+          const username = entry.username ?? ('#' + (entry.userId ?? ''));
+          const score = (entry.totalScore ?? 0);
+          return `<tr class="row" data-user="${entry.userId}">
+                    <td class="rank">${rank}</td>
+                    <td class="username">${escapeHtml(username)}</td>
+                    <td class="score">${escapeHtml(String(score))}</td>
+                  </tr>`;
+        });
+        tbody.innerHTML = rows.join('');
+        tbody.firstElementChild && tbody.firstElementChild.classList.add('pulse');
+        setTimeout(() => { tbody.firstElementChild && tbody.firstElementChild.classList.remove('pulse'); }, 700);
+      }
+
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"'`=\/]/g, function (c) {
+          return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','/':'&#x2F;','`':'&#x60;','=':'&#x3D;'}[c];
+        });
+      }
+
+      async function fetchTop(showErrors = true) {
+        try {
+          refreshBtn.disabled = true;
+          if (showErrors) { errorEl.style.display = 'none'; userResult.style.display='none'; }
+          const resp = await fetch(topEndpoint, {cache: 'no-store'});
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          const jsonText = JSON.stringify(data);
+          if (jsonText !== lastDataJson) {
+            lastDataJson = jsonText;
+            render(data);
+          }
+          lastUpdated.textContent = new Date().toLocaleTimeString();
+        } catch (err) {
+          console.error('Leaderboard fetch error', err);
+          if (showErrors) {
+            errorEl.textContent = 'Could not fetch leaderboard: ' + (err.message || err);
+            errorEl.style.display = 'block';
+          }
+        } finally {
+          refreshBtn.disabled = false;
+        }
+      }
+
+      async function lookupUser() {
+        const id = userIdInput.value && userIdInput.value.trim();
+        if (!id) {
+          userResult.style.display='block';
+          userResult.className = 'error';
+          userResult.textContent = 'Enter a valid user id';
+          return;
+        }
+        userResult.style.display='none';
+        try {
+          lookupBtn.disabled = true;
+          const resp = await fetch(rankEndpoint(id));
+          if (resp.status === 404) {
+            userResult.className = 'error';
+            userResult.textContent = 'User not found';
+            userResult.style.display='block';
+            return;
+          }
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          userResult.className = 'ok';
+          userResult.textContent = `User: ${data.username ?? data.userId} — Total: ${data.totalScore ?? 0} — Rank: ${data.rank ?? 'N/A'}`;
+          userResult.style.display='block';
+        } catch (err) {
+          console.error('Lookup error', err);
+          userResult.className = 'error';
+          userResult.textContent = 'Lookup failed: ' + (err.message || err);
+          userResult.style.display='block';
+        } finally {
+          lookupBtn.disabled = false;
+        }
+      }
+
+      async function addTwoPoints() {
+        const id = userIdInput.value && userIdInput.value.trim();
+        if (!id) {
+          userResult.style.display='block';
+          userResult.className = 'error';
+          userResult.textContent = 'Enter a valid user id before adding points';
+          return;
+        }
+        add2Btn.disabled = true;
+        try {
+          const body = { userId: Number(id), score: 2 };
+          const resp = await fetch(submitEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          userResult.className = 'ok';
+          userResult.textContent = `Added +2 to ${data.username ?? data.userId}. New total: ${data.totalScore}. Rank: ${data.rank ?? 'N/A'}`;
+          userResult.style.display='block';
+          // refresh top view after adding points
+          fetchTop(false);
+        } catch (err) {
+          console.error('Add points error', err);
+          userResult.className = 'error';
+          userResult.textContent = 'Failed to add points: ' + (err.message || err);
+          userResult.style.display='block';
+        } finally {
+          add2Btn.disabled = false;
+        }
+      }
+
+      refreshBtn.addEventListener('click', () => fetchTop());
+      lookupBtn.addEventListener('click', () => lookupUser());
+      add2Btn.addEventListener('click', () => addTwoPoints());
+      userIdInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') lookupUser(); });
+
+      // start polling
+      fetchTop();
+      timer = setInterval(fetchTop, POLL_INTERVAL_MS);
+
+      // pause polling when tab hidden
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          clearInterval(timer);
+          timer = null;
+        } else if (!timer) {
+          fetchTop();
+          timer = setInterval(fetchTop, POLL_INTERVAL_MS);
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
