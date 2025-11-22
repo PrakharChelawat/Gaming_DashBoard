@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/leaderboard")
@@ -17,12 +18,12 @@ public class LeaderboardController {
     private LeaderboardService leaderboardService;
 
     @PostMapping("/submit")
-    public ResponseEntity<PlayerRankDto> submitScore(@RequestBody SubmitScoreRequest req) {
+    public ResponseEntity<Map<String, Object>> submitScore(@RequestBody SubmitScoreRequest req) {
         if (req.getUserId() == null || req.getScore() == null) {
             return ResponseEntity.badRequest().build();
         }
-        PlayerRankDto dto = leaderboardService.submitScore(req.getUserId(), req.getScore());
-        return ResponseEntity.ok(dto);
+        Map<String, Object> response = leaderboardService.submitScore(req.getUserId(), req.getScore());
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/top")

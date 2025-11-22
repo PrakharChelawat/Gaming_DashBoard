@@ -50,7 +50,7 @@
       <div style="display:flex;gap:8px;align-items:center">
         <input id="userIdInput" type="text" placeholder="User ID" style="width:110px" />
         <button id="lookupBtn" class="btn">Lookup Rank</button>
-        <button id="add2Btn" class="btn" title="Add +2 points to user">+2 Points</button>
+        <button id="add2Btn" class="btn" title="Add +1000 points to user">+1000 Points</button>
       </div>
     </div>
 
@@ -194,7 +194,7 @@
         }
         add2Btn.disabled = true;
         try {
-          const body = { userId: Number(id), score: 2 };
+          const body = { userId: Number(id), score: 1000 };
           const resp = await fetch(submitEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -203,7 +203,7 @@
           if (!resp.ok) throw new Error('HTTP ' + resp.status);
           const data = await resp.json();
           userResult.className = 'ok';
-          userResult.textContent = `Added +2 to ${data.username ?? data.userId}. New total: ${data.totalScore}. Rank: ${data.rank ?? 'N/A'}`;
+          userResult.textContent = `Added +1000 to ${data.username ?? data.userId}. New total: ${data.totalScore}. Rank: ${data.rank ?? 'N/A'}`;
           userResult.style.display='block';
           // refresh top view after adding points
           fetchTop(false);

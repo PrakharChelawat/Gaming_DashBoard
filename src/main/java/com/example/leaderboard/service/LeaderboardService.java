@@ -12,6 +12,10 @@ import com.example.leaderboard.repository.UserRepository;
 import jakarta.persistence.EntityManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.PageRequest;
@@ -28,7 +32,8 @@ public class LeaderboardService {
     @Autowired private EntityManager entityManager;
 
     @Transactional
-    public PlayerRankDto submitScore(Long userId, int score) {
+    @CacheEvict(value = "topLeaderboard", allEntries = true)
+    public Map<String, Object> submitScore(Long userId, int score) {
         log.info("submitScore() called for userId={}, score={}", userId, score);
 
         // 1️⃣ Load user
@@ -48,17 +53,18 @@ public class LeaderboardService {
         leaderboardRepository.updateAllRanks();
         log.debug("Leaderboard ranks recomputed");
 
-        // 5️⃣ Fetch updated user entry
-        LeaderboardEntry myEntry = leaderboardRepository.findByUser(user)
-                .orElseThrow(() -> new IllegalStateException("Leaderboard entry missing"));
+        log.info("Score submitted successfully for userId={}", userId);
 
-        log.info("User {} updated totalScore={}, rank={}", userId, myEntry.getTotalScore(), myEntry.getRank());
-
-        return new PlayerRankDto(user.getId(), user.getUsername(), myEntry.getTotalScore(), myEntry.getRank());
+        // 5️⃣ Return simple success response
+        Map<String, Object> response = new HashMap<>();
+        response.put("userId", userId);
+        response.put("message", "Total score updated successfully");
+        return response;
     }
 
 
     @Transactional(readOnly = true)
+    @Cacheable(value = "topLeaderboard", key = "#limit")
     public List<LeaderboardEntryDto> getTop(int limit) {
         log.info("getTop() called, limit={}", limit);
 
@@ -80,6 +86,7 @@ public class LeaderboardService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(value = "userRank", key = "#userId")
     public PlayerRankDto getPlayerRank(Long userId) {
 
         log.info("getPlayerRank() called for userId={}", userId);
@@ -104,5 +111,16 @@ public class LeaderboardService {
                 e.getTotalScore(),
                 e.getRank()
         );
+    }
+
+    @Autowired
+    private CacheManager cacheManager;
+
+    public void printTopLeaderboardCache() {
+        Cache cache = cacheManager.getCache("topLeaderboard");
+        if (cache != null) {
+            Object cachedValue = cache.get(10, Object.class); // example for top 10
+            System.out.println("Cached Top 10 leaderboard: " + cachedValue);
+        }
     }
 }
